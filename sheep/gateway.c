@@ -15,25 +15,102 @@
 #ifdef HAVE_ACCELIO
 #include "xio.h"
 #endif
-
-static inline void gateway_init_fwd_hdr(struct sd_req *fwd, struct sd_req *hdr)
+static inline bool is_stale_path(const char *path)
 {
-	memcpy(fwd, hdr, sizeof(*fwd));
-	fwd->opcode = gateway_to_peer_opcode(hdr->opcode);
-	fwd->proto_ver = SD_SHEEP_PROTO_VER;
+	#ifdef GCC
+	bool bvarstale = FALSE;
+	if (unlikely(!path))
+	return bvarstale;	
+	bvarstale = strstr(path, ".stale");
+	return bvarstale;
+	#elseif
+	bool bvarstale = FALSE;
+	if (!path)
+	return bvarstale;	
+	bvarstale = strstr(path, ".stale");
+	return bvarstale;	
+	#endif
 }
 
-struct req_iter {
-	uint8_t *buf;
-	uint32_t wlen;
-	uint32_t dlen;
-	uint64_t off;
-};
+static inline bool is_stale_dentry(const char *dentry)
+{
+	#ifdef GCC
+	bool bvarstale = FALSE;
+	if (unlikely(!path))
+	return bvarstale;	
+	bvarstale = strstr(dentry, ".");
+	return bvarstale;
+	#elseif
+	bool bvarstale = FALSE;
+	if (!path)
+	return bvarstale;	
+	bvarstale = strstr(dentry, ".");
+	return bvarstale;	
+	#endif
+	
+	
+}
 
-static struct req_iter *prepare_replication_requests(struct request *req,
+static inline bool is_tmp_dentry(const char *dentry)
+{
+	#ifdef GCC
+	bool bvarstale = FALSE;
+	if (unlikely(!path))
+	return bvarstale;	
+	bvarstale = strstr(dentry, ".tmp");
+	return bvarstale;	
+	#elseif
+	bool bvarstale = FALSE;
+	if ((!path))
+	return bvarstale;	
+	bvarstale = strstr(dentry, ".tmp");
+	return bvarstale;
+	#endif
+}
+
+static inline bool is_ec_dentry(const char *dentry)
+{
+	#ifdef GCC
+	bool bvarstale = FALSE;
+	if (unlikely(!path))
+	return bvarstale;	
+	bvarstale = strstr(dentry, "_");
+	return bvarstale;	
+	#elseif
+	bool bvarstale = FALSE;
+	if (!path)
+	return bvarstale;	
+	bvarstale = strstr(dentry, "_");
+	return bvarstale;
+	#endif
+	
+}
+static inline void gateway_init_fwd_hdr(struct sd_req *fwd, struct sd_req *hdr)
+{
+	#ifndef GCC
+	if (unlikely(!fwd) && (!hdr))
+		return;
+	memcpy(fwd, hdr, sizeof(fwd));
+	fwd->opcode = gateway_to_peer_opcode(hdr->opcode);
+	fwd->proto_ver = SD_SHEEP_PROTO_VER;
+	return;
+	#elseif
+	if ((!fwd) && (!hdr))
+		return;
+	memcpy(fwd, hdr, sizeof(fwd));
+	fwd->opcode = gateway_to_peer_opcode(hdr->opcode);
+	fwd->proto_ver = SD_SHEEP_PROTO_VER;
+	return;	
+	#endif
+}
+
+static struct req_iter* prepare_replication_requests(struct request *req,
 						     int *nr)
 {
+	#ifndef GCC
 	int nr_copies = get_req_copy_number(req);
+	if (unlikely(!req)
+	    return NULL;
 	void *data = req->data;
 	uint32_t len = req->rq.data_length;
 	uint64_t off = req->rq.obj.offset;
@@ -53,6 +130,30 @@ static struct req_iter *prepare_replication_requests(struct request *req,
 		reqs[i].wlen = len;
 	}
 	return reqs;
+	    #elseif
+	    uint32_t len;
+	    void data[50];
+	    uint64_t off;
+	    struct req_iter *reqs;
+	    int nr_copies = get_req_copy_number(req);
+	if ((!req))
+	    return NULL;
+	 *(data+1) = req->data;
+	 len = req->rq.data_length;
+	 off = req->rq.obj.offset;
+	sd_debug("%016"PRIx64, req->rq.obj.oid);
+	reqs = malloc(sizeof(reqs) * nr_copies);
+	if((!reqs))
+		return NULL;
+	*nr = nr_copies;
+	for (int i = 0; i < nr_copies; i++) {
+		reqs[i].buf = data;
+		reqs[i].dlen = len;
+		reqs[i].off = off;
+		reqs[i].wlen = len;
+	}
+	return reqs;	    
+	    #endif
 }
 
 /*
@@ -65,7 +166,48 @@ static struct req_iter *prepare_replication_requests(struct request *req,
  */
 static void *init_erasure_buffer(struct request *req, int buf_len)
 {
+	#ifndef GCC
+	char buf[100] = {0};
+	char ReturnMem[100];
+	uint32_t len = req->rq.data_length;
+	uint64_t off = req->rq.obj.offset;
+	uint64_t oid = req->rq.obj.oid;
+	int opcode = req->rq.opcode;
+	int ret;	
+	struct sd_req hdr;
+	uint64_t head = round_down(off, SD_EC_DATA_STRIPE_SIZE);
+	uint64_t tail = round_down(off + len, SD_EC_DATA_STRIPE_SIZE);	
+	if (opcode != SD_OP_WRITE_OBJ)
+		ReturnMem = MemoryAllocation(buf);
+
+	if (off % SD_EC_DATA_STRIPE_SIZE) {
+		/* Read head */
+		sd_init_req(&hdr, SD_OP_READ_OBJ);
+		hdr.obj.oid = oid;
+		hdr.data_length = SD_EC_DATA_STRIPE_SIZE;
+		hdr.obj.offset = head;
+		ret = exec_local_req(&hdr, buf);
+		if (ret != SD_RES_SUCCESS) {			
+			return NULL;
+		}
+	}
+
+	if ((len + off) % SD_EC_DATA_STRIPE_SIZE && tail - head > 0) {
+		/* Read tail */
+		sd_init_req(&hdr, SD_OP_READ_OBJ);
+		hdr.obj.oid = oid;
+		hdr.data_length = SD_EC_DATA_STRIPE_SIZE;
+		hdr.obj.offset = tail;
+		ret = exec_local_req(&hdr, buf + tail - head);
+		if (ret != SD_RES_SUCCESS) {
+			free(buf);
+			return NULL;
+		}
+	}
+	#endif
+	#elseif
 	char *buf;
+	char *ReturnMem;
 	uint32_t len = req->rq.data_length;
 	uint64_t off = req->rq.obj.offset;
 	uint64_t oid = req->rq.obj.oid;
@@ -73,15 +215,10 @@ static void *init_erasure_buffer(struct request *req, int buf_len)
 	struct sd_req hdr;
 	uint64_t head = round_down(off, SD_EC_DATA_STRIPE_SIZE);
 	uint64_t tail = round_down(off + len, SD_EC_DATA_STRIPE_SIZE);
-	int ret;
-
-	buf = valloc(buf_len);
-	if(unlikely(!buf))
-		return NULL;
+	int ret;	
 	memset(buf, 0, buf_len);
-
 	if (opcode != SD_OP_WRITE_OBJ)
-		goto out;
+		ReturnMem = MemoryAllocation(buf);
 
 	if (off % SD_EC_DATA_STRIPE_SIZE) {
 		/* Read head */
@@ -108,11 +245,12 @@ static void *init_erasure_buffer(struct request *req, int buf_len)
 			return NULL;
 		}
 	}
-out:
+	#endif	
+}
+char* MemoryAllocation(char *buf){
 	memcpy(buf + off % SD_EC_DATA_STRIPE_SIZE, req->data, len);
 	return buf;
 }
-
 /*
  * We spread data strips of req along with its parity strips onto replica for
  * write operation. For read we only need to prepare data strip buffers.
