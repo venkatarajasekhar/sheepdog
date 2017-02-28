@@ -71,7 +71,14 @@ enum client_info_type {
 #endif
 };
 
-struct client_info {
+typedef struct req_iter_S {
+	uint8_t *buf;
+	uint32_t wlen;
+	uint32_t dlen;
+	uint64_t off;
+}req_iter;
+
+typedef struct client_info_S {
 	enum client_info_type type;
 
 	struct connection conn;
@@ -89,7 +96,7 @@ struct client_info {
 #ifdef HAVE_ACCELIO
 	struct xio_msg *xio_req;
 #endif
-};
+}client_info;
 
 enum REQUST_STATUS {
 	REQUEST_INIT,
@@ -103,11 +110,11 @@ enum store_id {
 	TREE_STORE
 };
 
-struct request_iocb {
+typedef struct request_iocb_S {
 	uint32_t count;
 	int efd;
 	int result;
-};
+}request_iocb;
 
 struct request {
 	struct sd_req rq;
@@ -598,25 +605,7 @@ int md_unplug_disks(char *disks);
 uint64_t md_get_size(uint64_t *used);
 uint32_t md_nr_disks(void);
 
-static inline bool is_stale_path(const char *path)
-{
-	return !!strstr(path, ".stale");
-}
 
-static inline bool is_stale_dentry(const char *dentry)
-{
-	return !!strstr(dentry, ".");
-}
-
-static inline bool is_tmp_dentry(const char *dentry)
-{
-	return !!strstr(dentry, ".tmp");
-}
-
-static inline bool is_ec_dentry(const char *dentry)
-{
-	return !!strstr(dentry, "_");
-}
 
 /* http.c */
 #ifdef HAVE_HTTP
